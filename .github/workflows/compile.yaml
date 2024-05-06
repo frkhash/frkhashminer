@@ -6,7 +6,7 @@ jobs:
   build-with-docker-u20n11:
     runs-on: ubuntu-latest
     container:
-      image: nvidia/cuda:11.0-devel-ubuntu20.04
+      image: nvidia/cuda:12.4.1-devel-ubuntu20.04
       options: --user root
     env:
       TZ: "America/New_York"
