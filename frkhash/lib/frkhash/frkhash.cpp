@@ -23,7 +23,7 @@ namespace
 
 inline hash512 hash_seed(const hash256& header_hash, uint64_t nonce) noexcept{
     nonce = le::uint64(nonce);
-    uint8_t init_data[sizeof(header_hash) + sizeof(nonce)];
+    uint8_t init_data[sizeof(header_hash) + sizeof(nonce)]; // 40bytes
     std::memcpy(&init_data[0], &header_hash, sizeof(header_hash));
     std::memcpy(&init_data[sizeof(header_hash)], &nonce, sizeof(nonce));
 

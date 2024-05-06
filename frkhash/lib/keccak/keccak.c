@@ -301,9 +301,9 @@ __attribute__((constructor)) static void select_keccakf1600_implementation()
 static inline ALWAYS_INLINE void keccak(
     uint64_t* out, size_t bits, const uint8_t* data, size_t size)
 {
-    static const size_t word_size = sizeof(uint64_t);
-    const size_t hash_size = bits / 8;
-    const size_t block_size = (1600 - bits * 2) / 8;
+    static const size_t word_size = sizeof(uint64_t); // 8
+    const size_t hash_size = bits / 8; // 512: 64; 256: 32;
+    const size_t block_size = (1600 - bits * 2) / 8; // 512: 72; 256: 136
 
     size_t i;
     uint64_t* state_iter;
@@ -312,7 +312,7 @@ static inline ALWAYS_INLINE void keccak(
 
     uint64_t state[25] = {0};
 
-    while (size >= block_size)
+    while (size >= block_size) // not working, because size is 512: 40; 256: 64
     {
         for (i = 0; i < (block_size / word_size); ++i)
         {
@@ -327,7 +327,7 @@ static inline ALWAYS_INLINE void keccak(
 
     state_iter = state;
 
-    while (size >= word_size)
+    while (size >= word_size) // working 5 times in 512, loading state[0..4]; working 8 times in 256, set state[0..7]
     {
         *state_iter ^= load_le(data);
         ++state_iter;
@@ -335,7 +335,7 @@ static inline ALWAYS_INLINE void keccak(
         size -= word_size;
     }
 
-    while (size > 0)
+    while (size > 0) // not working again
     {
         *last_word_iter = *data;
         ++last_word_iter;
@@ -343,13 +343,13 @@ static inline ALWAYS_INLINE void keccak(
         --size;
     }
     *last_word_iter = 0x01;
-    *state_iter ^= to_le64(last_word);
+    *state_iter ^= to_le64(last_word); // set state[5] in 512, state[8] in 256
 
-    state[(block_size / word_size) - 1] ^= 0x8000000000000000;
+    state[(block_size / word_size) - 1] ^= 0x8000000000000000; // set state[8] in 512, state[16] in 256
 
     keccakf1600_best(state);
 
-    for (i = 0; i < (hash_size / word_size); ++i)
+    for (i = 0; i < (hash_size / word_size); ++i) // 8 iterations for 512, 4 for 256
         out[i] = to_le64(state[i]);
 }
 

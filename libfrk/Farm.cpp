@@ -353,7 +353,7 @@ void Farm::submitProof(Solution const& _s) {
 void Farm::submitProofAsync(Solution const& _s) {
 
   Result r = FrkhashAux::eval(_s.work.header, _s.nonce);
-  
+/*
 #ifdef DEV_BUILD
   cnote << "\n";
   cnote << "Debug Info";
@@ -363,10 +363,12 @@ void Farm::submitProofAsync(Solution const& _s) {
   cnote << "MixHash: " << r.mixHash;
   cnote << "Result: " << r.value;
 #endif
-
+*/
     if (r.value > _s.work.boundary) {
+
         accountSolution(_s.midx, SolutionAccountingEnum::Failed);
-        cwarn << "GPU " << _s.midx << " gave incorrect result. Lower overclocking values if it happens frequently.";
+	cwarn << "GPU " << _s.midx << " gave incorrect result: target " << _s.work.boundary << " header " << r.value ;
+	//stop();
         return;
     }
     m_onSolutionFound(Solution{_s.nonce, r.mixHash, _s.work, _s.tstamp, _s.midx});

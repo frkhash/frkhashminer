@@ -22,7 +22,7 @@ using boost::asio::ip::tcp;
 
 EthGetworkClient::EthGetworkClient(int worktimeout, unsigned farmRecheckPeriod)
     : PoolClient(), m_farmRecheckPeriod(farmRecheckPeriod), m_io_strand(g_io_service), m_socket(g_io_service),
-      m_resolver(g_io_service), m_endpoints(), m_getwork_timer(g_io_service), m_worktimeout(worktimeout) {
+      m_txQueue(64), m_resolver(g_io_service), m_endpoints(), m_getwork_timer(g_io_service), m_worktimeout(worktimeout) {
     m_jSwBuilder.settings_["indentation"] = "";
 
     Json::Value jGetWork;
@@ -148,7 +148,7 @@ void EthGetworkClient::handle_connect(const boost::system::error_code& ec) {
                     os << *line;
 
                     // Out received message only for debug purpouses
-                    //if (g_logOptions & LOG_JSON)
+                    if (g_logOptions & LOG_JSON)
                         cnote << " >> " << *line;
 
                     delete line;
@@ -259,7 +259,7 @@ void EthGetworkClient::handle_read(const boost::system::error_code& ec, size_t b
             if (!isHeader) {
 //#ifdef DEV_BUILD
                 // Out received message only for debug purpouses
-                //if (g_logOptions & LOG_JSON)
+                if (g_logOptions & LOG_JSON)
                     cnote << " << " << line;
 //#endif
 
@@ -312,7 +312,7 @@ void EthGetworkClient::handle_resolve(const boost::system::error_code& ec, tcp::
 }
 
 void EthGetworkClient::processResponse(Json::Value& JRes) {
-    cnote << "Processing Response...";
+    //cnote << "Processing Response...";
 
     unsigned _id = 0;        // This SHOULD be the same id as the request it is responding to
     bool _isSuccess = false; // Whether or not this is a succesful or failed response
@@ -358,7 +358,7 @@ void EthGetworkClient::processResponse(Json::Value& JRes) {
                 newWp.boundary = h256(JPrm.get(Json::Value::ArrayIndex(2), "").asString());
                 newWp.job = newWp.header.hex();
 
-                cnote << "Header: " << newWp.header << "Difficulty: " << newWp.boundary << "Job: " << newWp.job;
+                //cnote << "Header: " << newWp.header << " Difficulty: " << newWp.boundary << " Job: " << newWp.job;
 
                 if (m_current.header != newWp.header) {
                     m_current = newWp;

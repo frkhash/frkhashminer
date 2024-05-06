@@ -553,6 +553,10 @@ class MinerCLI {
 
                 "Set the work group size, valid values are 64 128 or 256")
 
+            ("cl-double",
+
+                "Use second process of CL miner on the same GPU")
+		
             ("cl-split",
 
                 "Force split-DAG mode. May improve performance on older GPU models.");
@@ -596,6 +600,11 @@ class MinerCLI {
 
             parsed_options parsed = command_line_parser(argc, argv).options(all).allow_unregistered().run();
             store(parsed, vm);
+            if (vm.count("cl-double")) {
+
+#define CL_TARGET_BATCH_TIME_DOUBLE 0.6F
+
+	    }
 
             if (vm.count("config")) {
                 ifstream ifs(vm["config"].as<string>().c_str());
@@ -607,8 +616,9 @@ class MinerCLI {
                 // Read the whole file into a string
                 stringstream ss;
                 ss << ifs.rdbuf();
+		string sss = ss.str();
                 vector<string> args;
-                boost::split(args, ss.str(), boost::is_any_of(" \n\r\t"), boost::token_compress_on);
+                boost::split(args, sss, boost::is_any_of(" \n\r\t"), boost::token_compress_on);
                 store(command_line_parser(args).options(all).run(), vm);
             }
 

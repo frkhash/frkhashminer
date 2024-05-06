@@ -240,38 +240,60 @@ CLMiner::~CLMiner() {
 
 // NOTE: The following struct must match the one defined in
 // frkhash.cl
+
 struct SearchResults {
+    struct
+    {
+        uint32_t gid;
+        //uint64_t sol_targ;
+        //uint64_t sol_hea;
+    } rslt[c_maxSearchResults];
     uint32_t count;
     uint32_t hashCount;
     uint32_t abort;
-    uint32_t gid[c_maxSearchResults];
 };
 
-const static uint32_t zerox3[3] = {0, 0, 0};
+//const static uint32_t zerox3[3] = {0, 0, 0};
 
 void CLMiner::workLoop() {
     // Memory for zero-ing buffers. Cannot be static or const because crashes on macOS.
+    uint32_t zerox3[3] = {0, 0, 0};
 
     uint64_t startNonce = 0;
 
     // The work package currently processed by GPU.
     WorkPackage current;
     current.header = h256();
-
+    
     if (!initDevice())
         return;
 
     try {
         while (!shouldStop()) {
+	  for (uint32_t j = 0; j < nStreams; j++) {
             // Read results.
             SearchResults results;
 
-            if (m_queue) {
-                // synchronize and read the results.
-                m_queue->enqueueReadBuffer(*m_searchBuffer, CL_TRUE, 0, sizeof(results), (void*)&results);
-                // clear the solution count, hash count, and abort flag
-                m_queue->enqueueWriteBuffer(*m_searchBuffer, CL_FALSE, 0, sizeof(zerox3), zerox3);
-            } else
+            if (m_queue.size())
+            {
+                // no need to read the abort flag.
+                m_queue[j].enqueueReadBuffer(m_searchBuffer[j], CL_TRUE,
+                    offsetof(SearchResults, count), 2 * sizeof(results.count), (void*)&results.count);
+                if (results.count)
+                {
+                    if (results.count > c_maxSearchResults) {
+                        results.count = c_maxSearchResults;
+                    }
+                    cnote << "RECEIVED RESULTS: " << results.count;
+                    m_queue[j].enqueueReadBuffer(m_searchBuffer[j], CL_TRUE, 0, results.count * sizeof(results.rslt[0]), (void*)&results);
+
+                    // Reset search count if any solution found.
+                    m_queue[j].enqueueWriteBuffer(m_searchBuffer[j], CL_FALSE, offsetof(SearchResults, count), sizeof(results.count), zerox3);                    
+                }
+                // clean the solution hash count
+		m_queue[j].enqueueWriteBuffer(m_searchBuffer[j], CL_FALSE, offsetof(SearchResults, hashCount), sizeof(results.hashCount), zerox3);
+            }
+            else
                 results.count = 0;
 
             // Wait for work or 3 seconds (whichever the first)
@@ -283,64 +305,81 @@ void CLMiner::workLoop() {
                 continue;
             }
 
-            if (current.header != w.header) {
 
-                    if (!initEpoch())
-                        break;
+            if (current.header != w.header) current = w;
+            m_abortqueue.clear();
 
-                    //freeCache();
-                    w = work();
+            if (!initEpoch_frk(j))
+                    break;  // This will simply exit the thread
 
-                startNonce = w.startNonce;
+            m_abortqueue.push_back(cl::CommandQueue(m_context[0], m_device));
 
-                // Update header constant buffer.
-                m_queue->enqueueWriteBuffer(*m_header, CL_FALSE, 0, w.header.size, w.header.data());
+            w = current;
 
-                // zero the result count
-                m_queue->enqueueWriteBuffer(*m_searchBuffer, CL_FALSE, offsetof(SearchResults, count), sizeof(zerox3),
-                                            zerox3);
+            startNonce = startNonce ? startNonce : w.startNonce;
 
-                m_searchKernel.setArg(3, (uint64_t)(u64)((u256)w.boundary >> 192));
+            // Update header
+            m_queue[j].enqueueWriteBuffer(m_header[j], CL_FALSE, 0, w.header.size, w.header.data());
+
+            // zero the result count
+            m_queue[j].enqueueWriteBuffer(m_searchBuffer[j], CL_FALSE, offsetof(SearchResults, count), sizeof(zerox3), zerox3);
+            // Upper 64 bits of the boundary.
+            const uint64_t target = (uint64_t)(u64)((u256)w.boundary >> 192);
+            assert(target > 0);
+		
+            m_searchKernel.setArg(1, m_header[j]);
+            m_searchKernel.setArg(2, startNonce);
+            m_searchKernel.setArg(3, target);
 #ifdef DEV_BUILD
-                if (g_logOptions & LOG_SWITCH)
+            if (g_logOptions & LOG_SWITCH)
                     cnote << "Switch time: "
                           << chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() -
                                                                          m_workSwitchStart)
                                  .count()
                           << " us.";
 #endif
-            }
+
 
             float hr = RetrieveHashRate();
+#ifdef CL_TARGET_BATCH_TIME_DOUBLE
+            if (hr > 1e7)
+                m_block_multiple = uint32_t(hr * CL_TARGET_BATCH_TIME_DOUBLE / m_deviceDescriptor.clGroupSize);
+#else
             if (hr > 1e7)
                 m_block_multiple = uint32_t(hr * CL_TARGET_BATCH_TIME / m_deviceDescriptor.clGroupSize);
-
+#endif
             uint32_t batch_blocks = m_deviceDescriptor.clGroupSize * m_block_multiple;
 
             // Run the kernel.
-            m_searchKernel.setArg(2, startNonce);
+
             m_hung_miner.store(false);
-            m_queue->enqueueNDRangeKernel(m_searchKernel, cl::NullRange, batch_blocks, m_deviceDescriptor.clGroupSize);
+            m_queue[j].enqueueNDRangeKernel(m_searchKernel, cl::NullRange, batch_blocks, m_deviceDescriptor.clGroupSize);
 
             // Report results while the kernel is running.
             if (results.count > c_maxSearchResults)
                 results.count = c_maxSearchResults;
             for (uint32_t i = 0; i < results.count; i++) {
-                uint64_t nonce = current.startNonce + results.gid[i];
-                Farm::f().submitProof(Solution{nonce, h256(), current, chrono::steady_clock::now(), m_index});
-                ReportSolution(current.header, nonce);
-            }
+		uint64_t nonce = current.startNonce + results.rslt[i].gid;
 
+		if (nonce != m_lastNonce)
+		{
+			m_lastNonce = nonce;
+			Farm::f().submitProof(Solution{nonce, h256(), current, chrono::steady_clock::now(), m_index});
+			ReportSolution(current.header, nonce);
+		}
+
+            }
+            
             current = w; // kernel now processing newest work
             current.startNonce = startNonce;
             // Increase start nonce for following kernel execution.
             startNonce += batch_blocks;
             // Report hash count
             updateHashRate(m_deviceDescriptor.clGroupSize, results.hashCount);
-        }
+	  } //for
+        } // while
 
-        if (m_queue)
-            m_queue->finish();
+        if (m_queue.size()) for (uint32_t j = 0; j < nStreams; j++) m_queue[j].finish();
 
         free_buffers();
         m_abortMutex.unlock();
@@ -355,9 +394,9 @@ void CLMiner::workLoop() {
 void CLMiner::kick_miner() {
     m_abortMutex.lock();
     // Memory for abort Cannot be static because crashes on macOS.
-    if (m_abortqueue) {
+    if (!m_abortqueue.empty()) {
         static uint32_t one = 1;
-        m_abortqueue->enqueueWriteBuffer(*m_searchBuffer, CL_FALSE, offsetof(SearchResults, abort), sizeof(one), &one);
+        for (uint32_t j = 0; j < nStreams; j++) m_abortqueue[j].enqueueWriteBuffer(m_searchBuffer[j], CL_FALSE, offsetof(SearchResults, abort), sizeof(one), &one);
     }
     m_abortMutex.unlock();
     m_new_work_signal.notify_one();
@@ -555,8 +594,11 @@ bool CLMiner::initDevice() {
     return true;
 }
 
-bool CLMiner::initEpoch() {
+bool CLMiner::initEpoch() { return true; }
+
+bool CLMiner::initEpoch_frk(uint32_t jj) {
     m_initialized = false;
+    uint32_t zerox3[3] = {0, 0, 0};
 
     try {
         char options[256] = {0};
@@ -570,11 +612,16 @@ bool CLMiner::initEpoch() {
         }
 
         free_buffers();
-        // create context
-        m_context = new cl::Context(vector<cl::Device>(&m_device, &m_device + 1));
-        // create new queue with default in order execution property
-        m_queue = new cl::CommandQueue(*m_context, m_device);
-        m_abortqueue = new cl::CommandQueue(*m_context, m_device);
+        
+	    // create context
+
+        m_context.clear();
+        m_context.push_back(cl::Context(vector<cl::Device>(&m_device, &m_device + 1)));
+        m_queue.clear();
+        m_queue.push_back(cl::CommandQueue(m_context[0], m_device));
+	
+	    m_searchBuffer.clear();
+	    m_searchBuffer.emplace_back(m_context[0], CL_MEM_WRITE_ONLY, sizeof(SearchResults));
 
         // Release the pause flag if any
         resume(MinerPauseEnum::PauseDueToInsufficientMemory);
@@ -597,7 +644,7 @@ bool CLMiner::initEpoch() {
 
         // create miner OpenCL program
         cl::Program::Sources sources{{code.data(), code.size()}};
-        cl::Program program(*m_context, sources);
+        cl::Program program(m_context[0], sources);
         try {
             program.build({m_device}, options);
         } catch (cl::BuildError const& buildErr) {
@@ -618,14 +665,13 @@ bool CLMiner::initEpoch() {
         }
         // create buffer for header
 
-        m_searchKernel.setArg(1, m_header[0]);
+        m_header.clear();
+        m_header.push_back(cl::Buffer(m_context[0], CL_MEM_READ_ONLY, 32));
 
-        m_queue->enqueueWriteBuffer(*m_searchBuffer, CL_FALSE, 0, sizeof(zerox3), zerox3);
+        // for (uint32_t j = 0; j < nStreams; j++) m_queue[j].enqueueWriteBuffer(m_searchBuffer[j], CL_FALSE, 0, sizeof(zerox3), zerox3);
+	    m_queue[jj].enqueueWriteBuffer(m_searchBuffer[jj], CL_FALSE, 0, sizeof(zerox3), zerox3);
 
-        m_searchKernel.setArg(0, *m_searchBuffer); // Supply output buffer to kernel.
-        m_searchKernel.setArg(1, *m_header);       // Supply header buffer to kernel.
-
-        //ReportDAGDone(m_epochContext.dagSize, uint32_t(dagTime.count()), dagOk);
+        m_searchKernel.setArg(0, m_searchBuffer[jj]); // Supply output buffer to kernel.
     } catch (cl::Error const& err) {
         ccrit << ethCLErrorHelper("OpenCL init failed", err);
         pause(MinerPauseEnum::PauseDueToInitEpochError);

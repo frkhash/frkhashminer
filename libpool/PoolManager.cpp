@@ -126,7 +126,7 @@ void PoolManager::setClientHandlers() {
     p_client->onWorkReceived([&](WorkPackage const& wp) {
         // Should not happen !
         if (!wp){
-          cnote << "Work not recieved or empty!?";
+          cnote << "Work not received or empty!?";
           return;
         }
 

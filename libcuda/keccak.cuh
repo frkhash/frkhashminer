@@ -163,7 +163,6 @@ DEV_INLINE void keccak_f1600_init(uint2* state)
     s[10] = ROL2(u, 1);
 
     /* chi: a[i,j] ^= ~b[i,j+1] & b[i,j+2] */
-
     u = s[0];
     v = s[1];
     s[0] = chi(s[0], s[1], s[2]);
@@ -283,7 +282,6 @@ DEV_INLINE void keccak_f1600_init(uint2* state)
         s[10] = ROL2(u, 1);
 
         /* chi: a[i,j] ^= ~b[i,j+1] & b[i,j+2] */
-
         u = s[0];
         v = s[1];
         s[0] = chi(s[0], s[1], s[2]);
@@ -404,9 +402,9 @@ DEV_INLINE uint64_t keccak_f1600_final(uint2* state)
     for (uint32_t i = 9; i < 25; i++)
         s[i] = u2zero;
 
-
     s[8] = make_uint2(1, 0);
     s[16] = make_uint2(0, 0x80000000);
+
     /* theta: c = a[0,i] ^ a[1,i] ^ .. a[4,i] */
     t[0] = xor3(s[0], s[5], s[10]);
     t[1] = xor3(s[1], s[6], s[11]) ^ s[16];

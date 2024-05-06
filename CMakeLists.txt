@@ -34,11 +34,11 @@ HunterGate(
 )
 
 project(frkminer)
-set(PROJECT_VERSION 1.3.14) # Update version
+set(PROJECT_VERSION 1.3.15) # Update version
 
 cable_set_build_type(DEFAULT Release CONFIGURATION_TYPES Release RelWithDebInfo)
 
-option(FRKHASHCL "Build with OpenCL mining" OFF)
+option(FRKHASHCL "Build with OpenCL mining" ON)
 option(FRKHASHCUDA "Build with CUDA mining" ON)
 option(FRKHASHCPU "Build with CPU mining (only for development)" ON)
 option(APICORE "Build with API Server support" ON)
@@ -86,6 +86,8 @@ message("")
 include(EthCompilerSettings)
 if(UNIX)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffat-lto-objects")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffat-lto-objects")
 endif()
 
 cable_add_buildinfo_library(PROJECT_NAME ${PROJECT_NAME})

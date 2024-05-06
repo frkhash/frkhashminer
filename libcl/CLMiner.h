@@ -42,7 +42,7 @@
 #define CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV 0x4001
 #endif
 
-#define CL_TARGET_BATCH_TIME 0.3F // seconds
+#define CL_TARGET_BATCH_TIME 0.9F
 
 namespace dev {
 namespace exp {
@@ -61,41 +61,31 @@ class CLMiner : public Miner {
   private:
     void workLoop() override;
     bool initEpoch();
+    bool initEpoch_frk(uint32_t);
 
     cl::Kernel m_searchKernel;
     cl::Device m_device;
 
-    cl::Context* m_context = nullptr;
-    cl::CommandQueue* m_queue = nullptr;
-    cl::CommandQueue* m_abortqueue = nullptr;
-    cl::Buffer* m_header = nullptr;
-    cl::Buffer* m_searchBuffer = nullptr;
+    vector<cl::Context> m_context;
+    vector<cl::CommandQueue> m_queue;
+    vector<cl::CommandQueue> m_abortqueue;
+    vector<cl::Buffer> m_header;
+    vector<cl::Buffer> m_searchBuffer;
 
     void free_buffers() {
         m_abortMutex.lock();
-        if (m_header) {
-            delete m_header;
-            m_header = nullptr;
-        }
-        if (m_searchBuffer) {
-            delete m_searchBuffer;
-            m_searchBuffer = nullptr;
-        }
-        if (m_queue) {
-            delete m_queue;
-            m_queue = nullptr;
-        }
-        if (m_abortqueue) {
-            delete m_abortqueue;
-            m_abortqueue = nullptr;
-        }
-        if (m_context) {
-            delete m_context;
-            m_context = nullptr;
-        }
+
+        m_header.clear();
+        m_searchBuffer.clear();
+        m_queue.clear();
+        m_context.clear();
+        m_abortqueue.clear();
     }
 
     std::mutex m_abortMutex;
+
+    uint32_t nStreams = 1;    
+    uint64_t m_lastNonce = 0;
 };
 
 } // namespace exp
