@@ -1,0 +1,57 @@
+name: Build with Docker
+
+on: [push]
+
+jobs:
+  build-with-docker-u20n11:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:11.0-devel-ubuntu20.04
+      options: --user root
+    environment:
+      TZ: "America/New_York"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set Timezone
+        run: ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
+
+      - name: Update apt cache
+        run: apt update
+
+      - name: Upgrade packages
+        run: apt -y upgrade
+
+      - name: Install dependencies
+        run: apt install -y git cmake mesa-common-dev
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Restore Cache
+        uses: actions/cache@v2
+        with:
+          path: ~/.hunter
+          key: frkminer
+
+      - name: Configure CMake
+        run: cmake -DHUNTER_JOBS_NUMBER=4 -H. -Bbuild
+
+      - name: Build project
+        run: cmake --build build -- -j$(nproc)
+
+      - name: Save Cache
+        uses: actions/cache@v2
+        with:
+          path: ~/.hunter
+          key: frkminer
+
+      - name: Store artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: frkminer
+          path: build/frkminer/frkminer
+
+      - name: Run tests
+        run: ./build/frkminer/frkminer --version
