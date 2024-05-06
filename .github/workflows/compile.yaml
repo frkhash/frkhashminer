@@ -8,7 +8,7 @@ jobs:
     container:
       image: nvidia/cuda:11.0-devel-ubuntu20.04
       options: --user root
-    ENV:
+    env:
       TZ: "America/New_York"
     steps:
       - name: Checkout code
