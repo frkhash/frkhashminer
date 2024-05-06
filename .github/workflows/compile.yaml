@@ -26,9 +26,6 @@ jobs:
       - name: Install dependencies
         run: apt install -y git cmake mesa-common-dev
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
       - name: Restore Cache
         uses: actions/cache@v2
         with:
